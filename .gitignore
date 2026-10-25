@@ -83,6 +83,7 @@ Cargo.lock
 # ---- Anchor 本地数据（绝不入库） ----
 # 你的打卡记录、视频、备份、AI Key 全在这里
 data/
+.demo-data/
 .asr/
 .shots/
 .chrome-profile*/

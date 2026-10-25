@@ -108,23 +108,24 @@ export function VideosPage() {
 
       ${renderReels(data?.reels || [], today, run)}
 
-      ${groups.length
-        ? groups.map(
-            ([date, videos]) => html`
-              <div class="card">
-                <div class="card-head">
-                  <${Icon} name="film" size=${16} />
-                  <h2>${prettyDate(date)}</h2>
-                  <span class="hint">${videos.length} 段</span>
-                </div>
-                <div class="card-body">
-                  <div class="video-grid">
-                    ${videos.map((v) => renderVideoCard(v, () => setPlaying(v)))}
-                  </div>
+      ${(data?.videos || []).length
+        ? html`
+            <div class="card">
+              <div class="card-head">
+                <${Icon} name="film" size=${16} />
+                <h2>视频库</h2>
+                <span class="hint">${data.videos.length} 段 · 共 ${groups.length} 天</span>
+                <span class="chip plain" style=${{ marginLeft: 'auto' }}>
+                  <${Icon} name="clock" size=${11} /> 最近的在前
+                </span>
+              </div>
+              <div class="card-body">
+                <div class="video-grid">
+                  ${data.videos.map((v) => renderVideoCard(v, () => setPlaying(v)))}
                 </div>
               </div>
-            `,
-          )
+            </div>
+          `
         : html`
             <${Empty}
               icon="film"
@@ -165,6 +166,7 @@ function renderVideoCard(v, onOpen) {
       <div class="video-meta">
         <span class="vt">${v.title || '总结视频'}</span>
         <div class="row wrap" style=${{ gap: '4px' }}>
+          <span class="tiny faint nowrap">${prettyDate(v.date, { withWeekday: false })}</span>
           ${v.transcribeStatus === 'done'
             ? html`<span class="chip plain" style=${{ fontSize: '10px' }}>已转写</span>`
             : v.transcribeStatus === 'running'
@@ -172,7 +174,6 @@ function renderVideoCard(v, onOpen) {
               : null}
           ${v.analyzed ? html`<span class="chip violet" style=${{ fontSize: '10px' }}>已分析</span>` : null}
           ${v.playable === false ? html`<span class="chip amber" style=${{ fontSize: '10px' }}>需转码</span>` : null}
-          <span class="tiny faint">${humanBytes(v.size)}</span>
         </div>
       </div>
     </button>

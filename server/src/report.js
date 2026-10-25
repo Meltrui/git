@@ -268,6 +268,30 @@ export function buildRuleReport(facts) {
 
   const worstDay = rows.filter((r) => r.score != null).sort((a, b) => a.score - b.score)[0];
 
+  // 数据太少时也给一条能做的，别让建议列表空着
+  if (!adjustments.length) {
+    if (agg.dayCount < 3) {
+      adjustments.push({
+        id: 'adj-bootstrap',
+        type: 'note',
+        title: '先连续跑顺 3 天，再谈调整目标',
+        reason: `本周只有 ${agg.dayCount} 天有记录，样本太小，现在改指标是瞎猜。先把「按时开始 + 每天录总结视频」这两件事做到，再来调数值。`,
+      });
+    } else if (agg.itemCompletionRate >= 80) {
+      const firstStudy = indicators.find((i) => i.kind === 'study');
+      if (firstStudy) {
+        adjustments.push({
+          id: `adj-${firstStudy.id}-minutes`,
+          type: 'indicator_minutes',
+          indicatorId: firstStudy.id,
+          minutes: Math.min(120, (Number(firstStudy.minutes) || 30) + 10),
+          title: `把「${firstStudy.name}」加 10 分钟`,
+          reason: `本周条目完成率 ${agg.itemCompletionRate}%，节奏稳住了，可以往上加一点强度。`,
+        });
+      }
+    }
+  }
+
   const narrative = [
     `这周（${facts.range}）你有 ${agg.dayCount} 天留下了记录，平均得分 ${agg.avgScore}，` +
       `计划总时长 ${humanMinutes(agg.plannedMinutes)}，实际完成 ${humanMinutes(agg.achievedMinutes)}，` +

@@ -51,9 +51,33 @@ Anchor 做的是后面这半件事。
 | --- | --- |
 | ![今日](docs/screenshots/today.png) | ![复盘](docs/screenshots/review.png) |
 
-| 计划 | 设置 |
+| 计划 | 视频库 |
 | --- | --- |
-| ![计划](docs/screenshots/plan.png) | ![设置](docs/screenshots/settings.png) |
+| ![计划](docs/screenshots/plan.png) | ![视频](docs/screenshots/videos.png) |
+
+| 设置 | 手机 |
+| --- | --- |
+| ![设置](docs/screenshots/settings.png) | ![手机](docs/screenshots/mobile.png) |
+
+---
+
+## 想先看看它装满数据是什么样
+
+```bash
+npm run seed:demo
+```
+
+会在 `.demo-data/` 里生成三周的模拟记录（不动你的真实数据），然后：
+
+```bash
+# Windows
+$env:ANCHOR_DATA_DIR=".demo-data"; npm start
+# macOS / Linux
+ANCHOR_DATA_DIR=.demo-data npm start
+```
+
+看到的就是上面截图里的样子。想删掉演示数据，直接删 `.demo-data` 目录即可。
+（演示数据里只有视频索引，没有真实视频文件，点播放会提示找不到——这是正常的。）
 
 ---
 
@@ -226,7 +250,8 @@ anchor/
 ├── scripts/
 │   ├── setup.mjs             # 安装检查
 │   ├── doctor.mjs            # 环境体检
-│   ├── smoke.mjs            # API 冒烟测试（37 项）
+│   ├── smoke.mjs            # API 冒烟测试（51 项）
+│   ├── seed-demo.mjs         # 生成演示数据（写 .demo-data/）
 │   ├── fetch-asr-model.mjs   # 下载本地语音模型（分块断点续传）
 │   └── inspect-ui.mjs        # 用 headless Chrome 截图 + 抓控制台错误（开发用）
 └── data/                     # 你的数据（不进 git）
@@ -251,7 +276,8 @@ node scripts/smoke.mjs   # 37 项 API 冒烟测试
 | `npm run setup` | 安装检查 + 可选下载语音模型 |
 | `npm run doctor` | 环境体检 |
 | `npm run fetch:asr` | 下载本地语音识别模型 |
-| `node scripts/smoke.mjs` | API 冒烟测试 |
+| `npm run seed:demo` | 生成三周演示数据（写到 `.demo-data/`） |
+| `node scripts/smoke.mjs` | API 冒烟测试（51 项） |
 
 环境变量：`ANCHOR_PORT`（端口，默认 8787）、`ANCHOR_HOST`（默认 0.0.0.0）、`ANCHOR_DATA_DIR`（数据目录）。
 
