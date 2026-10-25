@@ -1,0 +1,37 @@
+{
+  "name": "anchor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Anchor 锚点 — 本地优先的自律监督系统：自动排计划、每日打卡确认、未完成标记、每周总结与调整建议、自我总结视频分析",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "fetch:asr": "node scripts/fetch-asr-model.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "keywords": [
+    "self-discipline",
+    "habit-tracker",
+    "study-planner",
+    "weekly-review",
+    "local-first"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "htm": "^3.1.1",
+    "multer": "^2.0.1",
+    "preact": "^10.24.3"
+  },
+  "optionalDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
+    "sherpa-onnx-node": "^2.0.0"
+  }
+}
