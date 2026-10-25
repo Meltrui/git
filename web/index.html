@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Anchor · 锚点</title>
+    <meta name="description" content="本地优先的自律监督系统：自动排计划、每日打卡、未完成标记、每周总结与调整建议" />
+    <meta name="theme-color" content="#090b10" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script>
+      // 先把主题定下来，避免刷新闪白
+      (function () {
+        try {
+          var saved = localStorage.getItem('anchor-theme');
+          var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {}
+      })();
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "preact": "/vendor/preact/dist/preact.mjs",
+          "preact/hooks": "/vendor/preact/hooks/dist/hooks.mjs",
+          "htm": "/vendor/htm/dist/htm.mjs",
+          "htm/preact": "/vendor/htm/preact/index.mjs"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root">
+      <div class="loading-block" style="min-height: 100vh">
+        <div class="spinner spinner-lg"></div>
+        <span>正在加载 Anchor…</span>
+      </div>
+    </div>
+    <noscript>这个页面需要启用 JavaScript。</noscript>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

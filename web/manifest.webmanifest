@@ -1,0 +1,20 @@
+{
+  "name": "Anchor · 锚点",
+  "short_name": "锚点",
+  "description": "本地优先的自律监督系统：自动排计划、每日打卡、未完成标记、每周总结与调整建议",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#090b10",
+  "theme_color": "#090b10",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
