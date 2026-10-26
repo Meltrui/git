@@ -77,7 +77,51 @@ async function main() {
     const data = await res.json();
     line('本地服务', data.ok ? '\x1b[32m运行中\x1b[0m' : '\x1b[31m异常\x1b[0m');
   } catch {
-    line('本地服务', '\x1b[33m没在跑\x1b[0m', '先 npm start');
+    line('本地服务', '\x1b[33m没在跑\x1b[0m', '双击 Anchor.vbs，或 npm run launch');
+  }
+
+  // 开机自启状态
+  if (process.platform === 'win32') {
+    const startupDir = process.env.APPDATA
+      ? path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
+      : '';
+    let auto = false;
+    if (startupDir) {
+      try {
+        auto = fs.readdirSync(startupDir).some((f) => f.toLowerCase().includes('anchor'));
+      } catch {
+        /* 忽略 */
+      }
+    }
+    line(
+      '开机自启',
+      auto ? '\x1b[32m已设置\x1b[0m' : '\x1b[33m未设置\x1b[0m',
+      auto ? '' : '双击 install-autostart.cmd 设置一次',
+    );
+  }
+
+  // 日志
+  const logNames = ['anchor.log', 'anchor-launch.log'];
+  const present = logNames.filter((f) => {
+    try {
+      return fs.existsSync(path.join(DATA_DIR, f));
+    } catch {
+      return false;
+    }
+  });
+  line('日志', present.length ? present.join('  ') : '还没有', DATA_DIR);
+
+  const errFile = path.join(DATA_DIR, 'anchor-launch-error.txt');
+  try {
+    if (fs.existsSync(errFile)) {
+      const text = fs.readFileSync(errFile, 'utf8').trim();
+      if (text) {
+        console.log('\n  \x1b[33m上次启动失败记录（anchor-launch-error.txt）：\x1b[0m');
+        for (const l of text.split('\n').slice(0, 10)) console.log(`    ${l}`);
+      }
+    }
+  } catch {
+    /* 忽略 */
   }
 
   const lan = Object.values(os.networkInterfaces())

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ROOT, WEB_DIST, DATA_DIR, VIDEO_DIR, PORT, HOST, ensureDirs } from './src/paths.js';
+import { initLogger, logPath } from './src/logger.js';
 import * as store from './src/store.js';
 import { api } from './src/routes.js';
 import { startScheduler } from './src/reminder.js';
@@ -14,6 +15,7 @@ import { localModelReady } from './src/asr.js';
 /* ------------------------------------------------------------------ */
 
 ensureDirs();
+initLogger();
 const db = store.load();
 
 const app = express();
@@ -161,6 +163,7 @@ const server = app.listen(PORT, HOST, () => {
   lines.push(`  ffmpeg     ${media.ffmpeg ? '就绪' : '未找到（视频封面/周回顾合成不可用）'}`);
   lines.push(`  本地转写   ${localModelReady() ? '模型就绪' : '未下载模型（可用云端转写或手动粘贴文字稿）'}`);
   lines.push(`  已记录     ${Object.keys(db.days).length} 天 · ${db.tasks.length} 个任务 · ${db.videos.length} 个视频`);
+  lines.push(`  日志       ${logPath()}`);
   lines.push('');
   console.log(lines.join('\n'));
 
@@ -169,7 +172,10 @@ const server = app.listen(PORT, HOST, () => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`\n  端口 ${PORT} 已被占用。换一个端口：\n    Windows:  $env:ANCHOR_PORT=8899; npm start\n`);
+    console.error(
+      `\n  端口 ${PORT} 已被占用。可能 Anchor 已经在跑了（直接打开 http://127.0.0.1:${PORT}），\n` +
+        `  或者换一个端口：\n    Windows:  $env:ANCHOR_PORT=8899; npm start\n  macOS/Linux:  ANCHOR_PORT=8899 npm start\n`,
+    );
   } else {
     console.error('\n  服务启动失败：', err.message, '\n');
   }

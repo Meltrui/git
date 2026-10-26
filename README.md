@@ -102,6 +102,39 @@ npm start
 
 不想让脚本问话的话，`npm install && npm start` 就够了，`npm run setup` 只是把环境检查一遍、顺便问你要不要下语音模型。
 
+---
+
+## 怎么启动（重要，建议花一分钟设置好）
+
+Anchor 是一个**跑在你自己电脑上的服务**，不是双击就能用的那种桌面软件——浏览器要能打开页面，后台得有一个进程在跑。所以「页面打不开」几乎总是同一个原因：**服务没在运行**。
+
+三种启动方式，按推荐顺序：
+
+### ① 设成开机自启（推荐，设一次就好）
+
+双击 **`install-autostart.cmd`**。
+
+它会在「启动」文件夹里放一个快捷方式，并（如果系统允许）额外注册一个计划任务。之后**每次登录 Windows，Anchor 都会在后台自动跑起来**，你只要打开浏览器就行。
+
+它会顺便在桌面创建一个「Anchor 锚点」图标。撤销：双击 `uninstall-autostart.cmd`。
+
+### ② 双击 `Anchor.vbs`
+
+在后台把服务拉起来（不弹黑框），然后自动打开浏览器。服务已经在跑的话，就只是打开页面，不会重复启动。
+
+### ③ 双击 `start-anchor.cmd`（前台模式）
+
+会开一个窗口实时显示日志，关掉窗口服务就停了。**排查问题的时候用这个**。
+
+### 页面打不开的时候，按这个顺序查
+
+1. 双击 `Anchor.vbs` 再刷新页面。（90% 的情况到这就好了）
+2. 还是不行 → 双击 `start-anchor.cmd`，看窗口里报什么错。
+3. 看日志：`data/anchor.log`、`data/anchor-launch.log`、`data/anchor-launch-error.txt`。
+4. 端口被占：`npm run doctor` 会告诉你 8787 上有没有东西在跑。
+
+停止服务：双击 `stop-anchor.cmd`。
+
 ### 想用 AI 的话
 
 设置 → 大模型 → 选 DeepSeek → 填 API Key（在 platform.deepseek.com 申请）。
@@ -112,7 +145,7 @@ Key 只写进本机的 `data/anchor.json`，不会上传，也不会进 git。
 
 ## 手机访问
 
-`npm start` 时终端会打印一个局域网地址，例如：
+终端（或 `npm run doctor`）会打印一个局域网地址，例如：
 
 ```
 本机访问   http://127.0.0.1:8787
@@ -122,6 +155,8 @@ Key 只写进本机的 `data/anchor.json`，不会上传，也不会进 git。
 手机连同一个 WiFi 打开第二个地址即可。想更安全一点：设置 → 访问与安全 → 设一个口令。
 
 浏览器里「添加到主屏幕」，就能像 App 一样用。
+
+> 手机访问的前提是电脑开着、服务在跑。所以更建议把开机自启设上（见上一节）。
 
 ---
 
@@ -237,6 +272,7 @@ anchor/
 │       ├── video.js          # 上传、封面、转码、转写任务、AI 分析、周回顾合成
 │       ├── jobs.js           # 后台任务表（转写/分析/合成都跑成 job）
 │       ├── reminder.js       # 提醒调度 + SSE 推送
+│       ├── logger.js         # 日志（data/anchor.log，2MB 自动轮转）
 │       ├── routes.js         # 全部 API
 │       └── paths.js / time.js
 ├── web/                      # 前端：零构建，浏览器原生 ESM
@@ -248,36 +284,55 @@ anchor/
 │   ├── components/           # ui / charts / video-upload
 │   └── lib/                  # api / format / icons
 ├── scripts/
+│   ├── launch.mjs            # 智能启动器（已在跑就只开浏览器）
+│   ├── stop.mjs              # 停止服务
+│   ├── install-autostart.mjs # 设置开机自启 + 桌面图标
+│   ├── uninstall-autostart.mjs
 │   ├── setup.mjs             # 安装检查
 │   ├── doctor.mjs            # 环境体检
-│   ├── smoke.mjs            # API 冒烟测试（51 项）
+│   ├── smoke.mjs             # API 冒烟测试（51 项）
 │   ├── seed-demo.mjs         # 生成演示数据（写 .demo-data/）
 │   ├── fetch-asr-model.mjs   # 下载本地语音模型（分块断点续传）
 │   └── inspect-ui.mjs        # 用 headless Chrome 截图 + 抓控制台错误（开发用）
+├── Anchor.vbs                # 双击启动（隐藏窗口）
+├── start-anchor.cmd          # 前台启动（看日志）
+├── stop-anchor.cmd
+├── install-autostart.cmd
+├── uninstall-autostart.cmd
 └── data/                     # 你的数据（不进 git）
 ```
+
+> `Anchor.vbs` 刻意只用 ASCII 字符：VBScript 按 ANSI 解析 `.vbs`，写中文会静默解析失败。
+> 所有中文提示都放在 Node 那边（`scripts/launch.mjs`，UTF-8 安全）。改这个文件时注意别把中文写回去。
 
 **为什么前端零构建？** 没有 bundler 就没有 `esbuild`、没有 300MB 的 `node_modules`、没有「改一行等 8 秒」。前端就是浏览器直接加载的 ESM 模块，改完刷新即可。代价是不能用 JSX（用 `htm` 模板字符串代替），这个取舍对这个规模的项目很划算。
 
 ## 自我检查
 
 ```bash
-npm run doctor   # 环境体检：Node、依赖、ffmpeg、模型、数据、服务状态
-npm start        # 另开一个终端
-node scripts/smoke.mjs   # 37 项 API 冒烟测试
+npm run doctor           # 环境体检：Node、依赖、ffmpeg、模型、数据、服务状态
+npm run launch           # 后台启动（已在跑就只开浏览器）
+npm run stop             # 停止
+npm run smoke            # 51 项 API 冒烟测试（需要服务在跑）
 ```
 
 ## 常用命令
 
 | 命令 | 作用 |
 | --- | --- |
-| `npm start` | 启动服务 |
-| `npm run dev` | 启动并在文件改动后自动重启 |
+| `npm start` | 前台启动（能看到实时日志） |
+| `npm run dev` | 前台启动并在文件改动后自动重启 |
+| `npm run launch` | 后台启动（已在跑就只打开浏览器） |
+| `npm run stop` | 停止服务 |
+| `npm run autostart` | 设置开机自启 + 桌面图标 |
+| `npm run autostart:remove` | 取消开机自启 |
 | `npm run setup` | 安装检查 + 可选下载语音模型 |
 | `npm run doctor` | 环境体检 |
 | `npm run fetch:asr` | 下载本地语音识别模型 |
 | `npm run seed:demo` | 生成三周演示数据（写到 `.demo-data/`） |
 | `node scripts/smoke.mjs` | API 冒烟测试（51 项） |
+
+Windows 用户也可以直接双击：`Anchor.vbs`（后台启动）、`start-anchor.cmd`（前台）、`install-autostart.cmd`（开机自启）、`uninstall-autostart.cmd`、`stop-anchor.cmd`。
 
 环境变量：`ANCHOR_PORT`（端口，默认 8787）、`ANCHOR_HOST`（默认 0.0.0.0）、`ANCHOR_DATA_DIR`（数据目录）。
 
@@ -299,12 +354,36 @@ node scripts/smoke.mjs   # 37 项 API 冒烟测试
 
 **数据结构升级**：`server/src/defaults.js` 里加字段，`store.js` 的 `migrate()` 做骨架合并，老数据会自动补齐新字段。
 
+## 常见问题
+
+**网页打不开 / 一片空白 / 连不上**
+九成是服务没在跑。双击 `Anchor.vbs`，再刷新。还不行就看 `data/anchor.log` 和 `data/anchor-launch.log`，或者用 `start-anchor.cmd` 前台启动看报错。没设开机自启的话，重启电脑后服务不会自己起来——双击 `install-autostart.cmd` 设一次。
+
+**电脑重启后就用不了了**
+没设开机自启。双击 `install-autostart.cmd`（不需要管理员权限），之后每次登录都会自动在后台启动。
+
+**手机上打不开局域网地址**
+电脑要开着、服务要在跑，手机和电脑要连同一个 WiFi。Windows 防火墙第一次可能会弹窗问是否允许，选「允许」。还不行就用 `npm run doctor` 看打印出来的局域网 IP 是不是你手机所在网段的。
+
+**端口 8787 被占用**
+`npm run doctor` 会显示占用情况。换端口：Windows `$env:ANCHOR_PORT=8899; npm start`。
+
+**视频播放不了 / 只有声音没画面**
+手机录的 HEVC 编码浏览器可能不支持。在视频详情里点「转成网页可播版本」，会自动转成 H.264。
+
+**「转写文字稿」是灰的**
+本地模型没下载。设置 → 语音转写 → 下载本地模型（约 240MB，一次就好），或者换云端服务填个 Key。
+
+**周总结看起来像模板，不够狠**
+那是没配大模型时规则引擎的版本。填上 DeepSeek 的 Key（设置 → 大模型）后重新生成，叙述和调整建议会具体得多。
+
 ## 已知边界
 
 - 单用户、单进程。两个人用就开两份、指不同的 `ANCHOR_DATA_DIR`。
 - 睡眠/起床时间目前只是显示，不参与排程（排的是「块」）。
 - 周回顾视频固定 1280×720 输出，纵向视频会被加黑边。
 - 手机端不能直接上传几十 GB 的长视频（浏览器内存限制），几分钟的总结视频没问题。
+- 开机自启依赖当前用户的「启动」文件夹，换 Windows 账号登录不会自动起（再双击一次 `install-autostart.cmd` 即可）。
 
 ## 许可
 

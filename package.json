@@ -10,6 +10,10 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
+    "launch": "node scripts/launch.mjs",
+    "stop": "node scripts/stop.mjs",
+    "autostart": "node scripts/install-autostart.mjs --desktop --start",
+    "autostart:remove": "node scripts/uninstall-autostart.mjs",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
     "fetch:asr": "node scripts/fetch-asr-model.mjs",
