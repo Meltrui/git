@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { ASR_DIR } from './paths.js';
 import { extractAudioWav, ffmpegPath, probe } from './media.js';
 
@@ -18,9 +19,6 @@ import { extractAudioWav, ffmpegPath, probe } from './media.js';
 const MODEL_DIR = path.join(ASR_DIR, 'model', 'sense-voice');
 const MODEL_FILE = path.join(MODEL_DIR, 'model.int8.onnx');
 const TOKENS_FILE = path.join(MODEL_DIR, 'tokens.txt');
-
-let recognizerPromise = null;
-let recognizerKey = '';
 
 export function localModelReady() {
   try {
@@ -63,71 +61,172 @@ export function asrStatus(settings) {
 /* 本地：sherpa-onnx                                                   */
 /* ------------------------------------------------------------------ */
 
-async function getRecognizer() {
-  const key = `${MODEL_FILE}|${TOKENS_FILE}`;
-  if (recognizerPromise && recognizerKey === key) return recognizerPromise;
+/* ------------------------------------------------------------------ */
+/* 本地：sherpa-onnx（跑在 worker 线程里）                              */
+/* ------------------------------------------------------------------ */
 
-  recognizerKey = key;
-  recognizerPromise = (async () => {
-    const mod = await import('sherpa-onnx-node');
-    const sherpa = mod.default || mod;
-    const numThreads = Math.max(1, Math.min(4, (os_cpus() || 4) - 1));
+/**
+ * 注意：sherpa 的 decode 是同步阻塞的。一段 30 分钟录音会卡住主线程几分钟，
+ * 那期间网页完全点不动。所以模型和推理都放在 worker 里跑。
+ */
+const WORKER_URL = new URL('./asr-worker.mjs', import.meta.url);
+const DECODE_TIMEOUT_MS = 45 * 60 * 1000;
+const IDLE_TERMINATE_MS = 10 * 60 * 1000;
 
-    const recognizer = new sherpa.OfflineRecognizer({
-      featConfig: { sampleRate: 16000, featureDim: 80 },
-      modelConfig: {
-        senseVoice: {
-          model: MODEL_FILE,
-          language: 'auto',
-          useInverseTextNormalization: 1,
-        },
-        tokens: TOKENS_FILE,
-        numThreads,
-        provider: 'cpu',
-        debug: 0,
+let worker = null;
+let workerLoad = null;
+let idleTimer = null;
+let seq = 0;
+const pending = new Map();
+
+function failPending(err) {
+  for (const job of pending.values()) job.reject(err);
+  pending.clear();
+}
+
+function resetWorker() {
+  const w = worker;
+  worker = null;
+  workerLoad = null;
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+  if (w) {
+    try {
+      w.terminate();
+    } catch {
+      /* 已经没了 */
+    }
+  }
+}
+
+function scheduleIdleExit() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => resetWorker(), IDLE_TERMINATE_MS);
+  if (idleTimer.unref) idleTimer.unref();
+}
+
+function spawnWorker() {
+  const w = new Worker(WORKER_URL);
+  w.on('message', (msg) => {
+    const job = pending.get(msg.id);
+    if (!job) return;
+    pending.delete(msg.id);
+    if (msg.ok) job.resolve(msg);
+    else job.reject(new Error(msg.error || '转写失败'));
+  });
+  w.on('error', (err) => {
+    failPending(err instanceof Error ? err : new Error(String(err)));
+    resetWorker();
+  });
+  w.on('exit', (code) => {
+    if (worker === w) {
+      worker = null;
+      workerLoad = null;
+    }
+    if (code !== 0) failPending(new Error(`转写线程异常退出（code ${code}）`));
+  });
+  return w;
+}
+
+function call(type, extra = {}, timeoutMs = DECODE_TIMEOUT_MS) {
+  if (!worker) throw new Error('转写线程没起来');
+  const id = ++seq;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error('转写超时：超过 45 分钟还没出结果'));
+    }, timeoutMs);
+    pending.set(id, {
+      resolve: (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      reject: (e) => {
+        clearTimeout(timer);
+        reject(e);
       },
     });
-    return { sherpa, recognizer };
-  })();
+    worker.postMessage({ id, type, ...extra });
+  });
+}
 
+function workerThreads() {
   try {
-    return await recognizerPromise;
-  } catch (err) {
-    recognizerPromise = null;
-    recognizerKey = '';
+    return Math.max(1, Math.min(4, os.cpus().length - 1));
+  } catch {
+    return 2;
+  }
+}
+
+function ensureWorker() {
+  if (workerLoad) return workerLoad;
+  workerLoad = (async () => {
+    if (!worker) worker = spawnWorker();
+    await call(
+      'load',
+      { modelFile: MODEL_FILE, tokensFile: TOKENS_FILE, numThreads: workerThreads() },
+      180000,
+    );
+    return worker;
+  })().catch((err) => {
+    resetWorker();
     throw new Error(
       `加载本地识别模型失败：${err.message}。可以运行 npm run fetch:asr 重新下载模型，或在设置里改用云端转写。`,
     );
-  }
+  });
+  return workerLoad;
 }
 
-function os_cpus() {
-  try {
-    return os.cpus().length;
-  } catch {
-    return 4;
-  }
-}
-
-async function transcribeLocal(filePath, settings) {
+async function transcribeLocal(filePath, settings, opts = {}) {
   if (!localModelReady()) {
     throw new Error('本地识别模型还没下载（设置页有下载按钮，或在命令行跑 npm run fetch:asr）');
   }
   if (!ffmpegPath()) throw new Error('缺少 ffmpeg，无法从视频里提取音频');
 
-  const { recognizer, sherpa } = await getRecognizer();
-  const wavPath = path.join(path.dirname(filePath), `.asr-${Date.now()}.wav`);
+  await ensureWorker();
+
+  const wavPath = path.join(
+    path.dirname(filePath),
+    `.asr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.wav`,
+  );
   try {
+    opts.onProgress?.(0.12, '提取音频');
     await extractAudioWav(filePath, wavPath);
-    const wave = sherpa.readWave(wavPath);
-    const stream = recognizer.createStream();
-    stream.acceptWaveform({ sampleRate: wave.sampleRate, samples: wave.samples });
-    recognizer.decode(stream);
-    const result = recognizer.getResult(stream);
-    const text = cleanTranscript(result.text || '');
+    opts.onProgress?.(0.25, '识别中');
+
+    // 解码本身没法报进度，按「音频时长 → 预估耗时」给一条爬升的进度线
+    let durationSec = 0;
+    try {
+      const info = await probe(wavPath);
+      durationSec = info?.durationSec || 0;
+    } catch {
+      /* 拿不到时长就按最短估 */
+    }
+    const estMs = Math.max(8000, durationSec * 170);
+    const started = Date.now();
+    const ticker = setInterval(() => {
+      const ratio = Math.min(0.92, 0.25 + ((Date.now() - started) / estMs) * 0.67);
+      opts.onProgress?.(ratio, '识别中');
+    }, 1200);
+    if (ticker.unref) ticker.unref();
+
+    let result;
+    try {
+      result = await call('transcribe', { wavPath });
+    } finally {
+      clearInterval(ticker);
+    }
+
+    opts.onProgress?.(0.97, '整理文字稿');
+    scheduleIdleExit();
     return {
-      text,
-      segments: result.tokens ? [{ tokens: result.tokens, timestamps: result.timestamps }] : [],
+      text: cleanTranscript(result.text || ''),
+      segments:
+        result.tokens && result.tokens.length
+          ? [{ tokens: result.tokens, timestamps: result.timestamps }]
+          : [],
       language: settings?.asr?.language || 'zh',
       provider: 'local:sense-voice',
     };
@@ -206,9 +305,10 @@ function cleanTranscript(raw) {
 /**
  * @param {string} filePath 视频或音频文件
  * @param {object} settings
+ * @param {{onProgress?:(ratio:number,label:string)=>void}} [opts]
  * @returns {Promise<{text:string, provider:string, language:string, durationSec:number}>}
  */
-export async function transcribeFile(filePath, settings) {
+export async function transcribeFile(filePath, settings, opts = {}) {
   const cfg = settings?.asr || {};
   if (cfg.provider === 'none') throw new Error('当前设置为不转写');
 
@@ -217,10 +317,16 @@ export async function transcribeFile(filePath, settings) {
 
   const out =
     cfg.provider === 'local'
-      ? await transcribeLocal(filePath, settings)
+      ? await transcribeLocal(filePath, settings, opts)
       : await transcribeCloud(filePath, settings);
 
   return { ...out, durationSec };
+}
+
+/** 退出前把 worker 收掉，避免留下孤儿线程 */
+export function disposeAsr() {
+  resetWorker();
+  failPending(new Error('转写已取消'));
 }
 
 /** 支持的云端语音服务预设 */

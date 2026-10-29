@@ -2,13 +2,15 @@ import express from 'express';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, WEB_DIST, DATA_DIR, VIDEO_DIR, PORT, HOST, ensureDirs } from './src/paths.js';
+import { ROOT, WEB_DIST, DATA_DIR, VIDEO_DIR, INBOX_DIR, PORT, HOST, ensureDirs } from './src/paths.js';
 import { initLogger, logPath } from './src/logger.js';
 import * as store from './src/store.js';
 import { api } from './src/routes.js';
 import { startScheduler } from './src/reminder.js';
 import { mediaStatus } from './src/media.js';
-import { localModelReady } from './src/asr.js';
+import { localModelReady, disposeAsr } from './src/asr.js';
+import { startInboxWatcher } from './src/inbox.js';
+import { sweepExpiredRaw } from './src/video.js';
 
 /* ------------------------------------------------------------------ */
 /* 启动                                                                */
@@ -160,6 +162,7 @@ const server = app.listen(PORT, HOST, () => {
   lines.push('');
   lines.push(`  数据目录   ${DATA_DIR}`);
   lines.push(`  视频目录   ${VIDEO_DIR}`);
+  lines.push(`  收件箱     ${INBOX_DIR}  （手机传上来的视频丢这里，自动导入）`);
   lines.push(`  ffmpeg     ${media.ffmpeg ? '就绪' : '未找到（视频封面/周回顾合成不可用）'}`);
   lines.push(`  本地转写   ${localModelReady() ? '模型就绪' : '未下载模型（可用云端转写或手动粘贴文字稿）'}`);
   lines.push(`  已记录     ${Object.keys(db.days).length} 天 · ${db.tasks.length} 个任务 · ${db.videos.length} 个视频`);
@@ -168,6 +171,19 @@ const server = app.listen(PORT, HOST, () => {
   console.log(lines.join('\n'));
 
   startScheduler();
+  startInboxWatcher(() => store.get().settings);
+
+  /* 保留 N 天原片的策略：启动后扫一次，之后每 6 小时扫一次 */
+  const sweep = () => {
+    try {
+      sweepExpiredRaw(store.get().settings);
+    } catch (err) {
+      console.error('[storage] 过期原片清理失败：', err.message);
+    }
+  };
+  setTimeout(sweep, 30000);
+  const sweepTimer = setInterval(sweep, 6 * 3600 * 1000);
+  if (sweepTimer.unref) sweepTimer.unref();
 });
 
 server.on('error', (err) => {
@@ -186,6 +202,11 @@ function shutdown(signal) {
   console.log(`\n  收到 ${signal}，正在保存数据…`);
   try {
     store.flush();
+  } catch {
+    /* 忽略 */
+  }
+  try {
+    disposeAsr();
   } catch {
     /* 忽略 */
   }
