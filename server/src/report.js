@@ -55,12 +55,17 @@ export function buildWeeklyFacts({ key, dates, days, settings, tasks = [], video
         }`,
     );
 
+  /* 本周他自己的话：优先用文字稿原文（那才是「他自己的话」），
+     没有文字稿时退回 AI 提炼的 summary */
   const videoGists = videos
     .filter((v) => v.date && dates.includes(v.date))
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
     .map((v) => {
-      const a = v.analysis;
-      const text = a?.summary || v.transcript?.text?.slice(0, 260) || '（无文字稿）';
-      return `- ${v.date}：${text}`;
+      const raw = String(v.transcript?.text || '').trim();
+      const body = raw
+        ? raw.slice(0, 700) + (raw.length > 700 ? '…（后略）' : '')
+        : v.analysis?.summary || '（这天没录视频 / 没转出文字）';
+      return `- ${v.date}：${body}`;
     });
 
   const examDate = settings.profile?.examDate;
@@ -312,10 +317,32 @@ export function buildRuleReport(facts) {
     patterns: patterns.slice(0, 3),
     adjustments: adjustments.slice(0, 5),
     nextWeekFocus: adjustments.length ? [adjustments[0].title] : ['保持当前节奏，重点是准时开始'],
+    yourOwnWords: buildRuleYourOwnWords(facts),
     riskScore: Math.max(0, Math.min(100, Math.round(100 - agg.avgScore))),
     bestDay: bestDay?.date || null,
     toughestDay: worstDay?.date || null,
   };
+}
+
+/** 没有大模型时，「你自己的话」这一节用能算出来的事实凑一段 */
+function buildRuleYourOwnWords(facts) {
+  const { agg, rows } = facts;
+  const videoDays = rows.filter((r) => r.hasVideo).length;
+  if (!videoDays) {
+    return (
+      `这周你有 ${agg.dayCount} 天记录了打卡，但一个总结视频都没录。` +
+      '没有声音的这一周，数据只能告诉你「做了/没做」，告诉不了你「为什么」。' +
+      '明天开始，哪怕只对着手机讲一分钟：今天学了什么、卡在哪、明天先做哪件事。'
+    );
+  }
+  const missed = rows.filter((r) => r.score != null && r.score < 70).length;
+  return (
+    `这周你录了 ${videoDays} 天总结视频，平均得分 ${agg.avgScore}。` +
+    (missed
+      ? `有 ${missed} 天没到 70 分——翻回去听那几天的视频，你自己当时说的原因，往往就是下一个要修的地方。`
+      : '没有哪天掉到 70 分以下，节奏是稳的，可以把注意力放到「每一块有没有真学进去」上。') +
+    '把这一周的视频连着听一遍，比看任何报表都管用。'
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -453,6 +480,7 @@ function normalizeAiReport(data, fallback, settings) {
     patterns: strArr(data.patterns, 4),
     adjustments,
     nextWeekFocus: strArr(data.nextWeekFocus, 4),
+    yourOwnWords: String(data.yourOwnWords || fallback.yourOwnWords || '').slice(0, 3000),
     riskScore: Number.isFinite(Number(data.riskScore)) ? Math.max(0, Math.min(100, Number(data.riskScore))) : fallback.riskScore,
     bestDay: data.bestDay || fallback.bestDay,
     toughestDay: data.toughestDay || fallback.toughestDay,

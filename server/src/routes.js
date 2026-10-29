@@ -6,6 +6,7 @@ import { TMP_DIR, REEL_DIR, THUMB_DIR, VIDEO_DIR, ROOT } from './paths.js';
 import * as store from './store.js';
 import * as repo from './repo.js';
 import * as videoSvc from './video.js';
+import * as inbox from './inbox.js';
 import { planDay, relayout } from './planner.js';
 import { scoreDay, aggregateDays, computeStreak } from './score.js';
 import { aiStatus, testConnection, chat, chatJson, PROVIDERS } from './ai.js';
@@ -67,8 +68,8 @@ function mergeSettingsPatch(current, patch) {
   return clean;
 }
 
-function videoAbsPath(video, proxy = false) {
-  return videoSvc.videoFilePath(video, { proxy });
+function videoAbsPath(video) {
+  return videoSvc.primaryAbs(video);
 }
 
 function datesOfWeek(key) {
@@ -168,6 +169,7 @@ api.put(
     const current = repo.getSettings();
     const patch = mergeSettingsPatch(current, req.body);
     const next = repo.updateSettings(patch);
+    inbox.restartInboxWatcher(() => repo.getSettings());
     ok(res, { settings: maskSettings(next) });
   }),
 );
@@ -548,9 +550,12 @@ api.get(
         playable: videoSvc.isWebPlayable(v),
         url: `/api/videos/${v.id}/file`,
         thumbUrl: v.thumb ? `/api/videos/${v.id}/thumb` : null,
+        audioUrl: videoSvc.audioAbs(v) ? `/api/videos/${v.id}/audio` : null,
+        storage: videoSvc.storageBrief(v),
       })),
       reels: videoSvc.listReels(),
       capabilities: videoSvc.capabilityReport(repo.getSettings()),
+      media: repo.getSettings().media,
     });
   }),
 );
@@ -567,8 +572,15 @@ api.post(
       size: req.file.size,
       date: req.body?.date,
       title: req.body?.title,
+      source: 'upload',
     });
-    ok(res, { video, playable: videoSvc.isWebPlayable(video) });
+    const settings = repo.getSettings();
+    const job = videoSvc.startProcessJob(video.id, settings);
+    ok(res, {
+      video: repo.getVideo(video.id) || video,
+      playable: videoSvc.isWebPlayable(video),
+      job,
+    });
   }),
 );
 
@@ -664,12 +676,82 @@ api.post(
   }),
 );
 
+/* 重新归档：换了清晰度/保留策略后，对已有视频再跑一次压缩流水线 */
+api.post(
+  '/videos/:id/archive',
+  wrap(async (req, res) => {
+    const video = repo.getVideo(req.params.id);
+    if (!video) throw fail(404, '找不到这个视频');
+    const job = videoSvc.startReprocessJob(video, repo.getSettings());
+    ok(res, { job });
+  }),
+);
+
+/* 只删原片，保留归档版和文字稿 */
+api.post(
+  '/videos/:id/delete-raw',
+  wrap(async (req, res) => {
+    const video = repo.getVideo(req.params.id);
+    if (!video) throw fail(404, '找不到这个视频');
+    ok(res, videoSvc.deleteRawOnly(video));
+  }),
+);
+
+api.get(
+  '/videos/:id/audio',
+  wrap(async (req, res) => {
+    const video = repo.getVideo(req.params.id);
+    if (!video) throw fail(404, '找不到这个视频');
+    const abs = videoSvc.audioAbs(video);
+    if (!abs) throw fail(404, '这个视频还没有归档音频');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(abs);
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/* 存储与收件箱                                                        */
+/* ------------------------------------------------------------------ */
+
+api.get(
+  '/storage',
+  wrap(async (req, res) => {
+    ok(res, videoSvc.storageReport());
+  }),
+);
+
+api.post(
+  '/storage/cleanup',
+  wrap(async (req, res) => {
+    const what = String(req.body?.what || 'raw');
+    if (!['raw', 'audio', 'orphans', 'failed'].includes(what)) {
+      throw fail(400, '清理类型只能是 raw / audio / orphans / failed');
+    }
+    ok(res, videoSvc.cleanupStorage({ what }));
+  }),
+);
+
+api.get(
+  '/inbox',
+  wrap(async (req, res) => {
+    ok(res, inbox.inboxStatus(repo.getSettings()));
+  }),
+);
+
+api.post(
+  '/inbox/scan',
+  wrap(async (req, res) => {
+    ok(res, await inbox.scanOnce(repo.getSettings()));
+  }),
+);
+
 api.get(
   '/videos/:id/file',
   wrap(async (req, res) => {
     const video = repo.getVideo(req.params.id);
     if (!video) throw fail(404, '找不到这个视频');
-    const abs = videoAbsPath(video, video.proxyPath ? true : false);
+    const abs = videoAbsPath(video);
     if (!fs.existsSync(abs)) throw fail(404, '视频文件不见了');
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'private, max-age=3600');
