@@ -190,7 +190,32 @@ async function main() {
   check('视频库可读', Array.isArray(videos.json?.data?.videos), videos.text.slice(0, 200));
   check('视频能力报告存在', !!videos.json?.data?.capabilities?.media);
 
-  console.log('\n[16] 错误处理');
+  console.log('\n[16] 存储与收件箱');
+  const storage = await call('GET', '/api/storage');
+  const st = storage.json?.data;
+  check('存储报告可读', storage.status === 200 && typeof st?.totalBytes === 'number', storage.text.slice(0, 200));
+  check('存储报告有分类明细', !!st?.byKind && typeof st.byKind.raw === 'number');
+  check('存储报告有省下的空间', typeof st?.savedBytes === 'number', st?.savedBytes);
+  check('存储报告有清理计数', typeof st?.counts?.videos === 'number');
+  const badClean = await call('POST', '/api/storage/cleanup', { what: '乱写' });
+  check('非法清理类型返回 400', badClean.status === 400, badClean.status);
+  const inbox = await call('GET', '/api/inbox');
+  check('收件箱状态可读', Array.isArray(inbox.json?.data?.pending), inbox.text.slice(0, 200));
+  check('收件箱有目录路径', typeof inbox.json?.data?.dir === 'string');
+  const scan = await call('POST', '/api/inbox/scan');
+  check('可以手动扫描收件箱', scan.status === 200 && typeof scan.json?.data?.scanned === 'number', scan.text.slice(0, 200));
+  const settingsNow = await call('GET', '/api/settings');
+  check('设置有媒体归档策略', typeof settingsNow.json?.data?.settings?.media?.archive === 'string');
+  check('默认归档是 540p', settingsNow.json?.data?.settings?.media?.compactHeight === 540);
+  const mediaPut = await call('PUT', '/api/settings', { media: { compactCrf: 28 } });
+  check('可以局部修改媒体策略', mediaPut.json?.data?.settings?.media?.compactCrf === 28, mediaPut.text.slice(0, 200));
+  check('改局部不会清掉其他媒体设置', mediaPut.json?.data?.settings?.media?.archive === 'compact');
+  await call('PUT', '/api/settings', { media: { compactCrf: 30 } });
+  const videoZero = await call('GET', '/api/videos');
+  check('视频列表带存储摘要', (videoZero.json?.data?.videos || []).every((v) => v.storage === undefined || typeof v.storage === 'object'));
+  check('视频列表带媒体设置', !!videoZero.json?.data?.media);
+
+  console.log('\n[17] 错误处理');
   const notFound = await call('GET', '/api/不存在');
   check('未知接口返回 404', notFound.status === 404);
   const badDate = await call('GET', '/api/days/not-a-date');
