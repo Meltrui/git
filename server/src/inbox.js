@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { INBOX_DIR, INBOX_DONE_DIR, INBOX_LOG, TMP_DIR } from './paths.js';
 import { isVideoFile, ingest, startProcessJob } from './video.js';
 import * as repo from './repo.js';
@@ -183,6 +184,23 @@ export function inboxStatus(settings) {
     watching: !!state.timer,
     recent: readLog().slice(0, 12),
   };
+}
+
+/** 在资源管理器里打开收件箱，省得用户自己照着路径找 */
+export function openInboxFolder() {
+  try {
+    fs.mkdirSync(INBOX_DIR, { recursive: true });
+    const child = spawn('explorer.exe', [INBOX_DIR], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
+    child.on('error', () => {});
+    child.unref();
+    return { ok: true, dir: INBOX_DIR };
+  } catch (err) {
+    return { ok: false, dir: INBOX_DIR, error: err.message };
+  }
 }
 
 /** 启动后台扫描 */

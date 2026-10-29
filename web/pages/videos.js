@@ -293,6 +293,15 @@ function StorageCard({ storage, inbox, onRefresh }) {
     }
   };
 
+  const doOpenFolder = async () => {
+    try {
+      const res = await api.post('/api/inbox/open');
+      if (res.ok === false) toastErr(res.error || '打不开文件夹，手动打开下面的路径吧');
+    } catch (err) {
+      toastErr(err.message);
+    }
+  };
+
   return html`
     <div class="card">
       <div class="card-head">
@@ -378,7 +387,8 @@ function StorageCard({ storage, inbox, onRefresh }) {
             </span>
           </div>
           <div class="tiny faint" style=${{ lineHeight: 1.9 }}>
-            手机用微信 / QQ 把视频传到电脑，然后把文件拖到这个文件夹：
+            手机用微信 / QQ 把视频传到电脑，然后把文件复制到这个文件夹（点下面按钮直接打开）：
+            复制完成约 20 秒后自动导入、压缩、转写、让 AI 读；支持 mp4 / mov / m4v / mkv / webm / avi / 3gp。
           </div>
           <code
             style=${{
@@ -392,6 +402,10 @@ function StorageCard({ storage, inbox, onRefresh }) {
             }}
           >${inbox?.dir || 'data/inbox'}</code>
           <div class="row wrap" style=${{ gap: '8px', alignItems: 'center' }}>
+            <button class="btn btn-sm btn-primary" onClick=${doOpenFolder}>
+              <${Icon} name="upload" size=${13} />
+              打开收件箱文件夹
+            </button>
             <button class="btn btn-sm" onClick=${doScan} disabled=${scanning}>
               ${scanning ? html`<span class="spinner"></span>` : html`<${Icon} name="refresh" size=${13} />`}
               立即扫描

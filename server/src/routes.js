@@ -746,6 +746,13 @@ api.post(
   }),
 );
 
+api.post(
+  '/inbox/open',
+  wrap(async (req, res) => {
+    ok(res, inbox.openInboxFolder());
+  }),
+);
+
 api.get(
   '/videos/:id/file',
   wrap(async (req, res) => {

@@ -831,6 +831,15 @@ function StorageSection({ settings, save, reload }) {
   const keepOriginal = m.keepOriginal || 'off';
   const pending = inbox?.pending || [];
 
+  const doOpenFolder = async () => {
+    try {
+      const res = await api.post('/api/inbox/open');
+      if (res.ok === false) toastErr(res.error || '打不开文件夹，手动打开下面的路径吧');
+    } catch (err) {
+      toastErr(err.message);
+    }
+  };
+
   const doScan = async () => {
     setScanning(true);
     try {
@@ -985,7 +994,7 @@ function StorageSection({ settings, save, reload }) {
 
     <${Section} title="收件箱" desc="手机传大视频，走这里比浏览器上传靠谱">
       <div class="tiny faint" style=${{ lineHeight: 1.9 }}>
-        手机用微信 / QQ 把视频传到电脑，把文件拖进下面这个文件夹，就会自动导入、归档、转写、让 AI 读一遍。
+        手机用微信 / QQ 把视频传到电脑，把文件复制进下面这个文件夹（点按钮直接打开），约 20 秒后自动导入、归档、转写、让 AI 读一遍。支持 mp4 / mov / m4v / mkv / webm / avi / 3gp。
       </div>
       <code
         style=${{
@@ -1000,6 +1009,10 @@ function StorageSection({ settings, save, reload }) {
       >${inbox?.dir || 'data/inbox'}</code>
 
       <div class="row wrap" style=${{ gap: '8px', alignItems: 'center' }}>
+        <button class="btn btn-sm btn-primary" onClick=${doOpenFolder}>
+          <${Icon} name="upload" size=${13} />
+          打开收件箱文件夹
+        </button>
         <button class="btn btn-sm" onClick=${doScan} disabled=${scanning}>
           ${scanning ? html`<span class="spinner"></span>` : html`<${Icon} name="refresh" size=${13} />`}
           立即扫描
