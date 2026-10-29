@@ -804,6 +804,8 @@ function ItemDetail({ item, date, onClose, onSave, onUpdate, onDelete }) {
 function renderDayEnd({ day, date, settings, videos, onUploaded, saveJournal, closeDay, reopen, onPlay }) {
   const journal = day.journal || { mood: 3, energy: 3, note: '' };
   const pendingCount = (day.items || []).filter((i) => (i.record?.status || 'pending') === 'pending').length;
+  /* AI 读完今天的视频之后，挑一段最有话说出来给他看 */
+  const said = videos.find((v) => v.encouragement) || null;
 
   return html`
     <div class="grid-2">
@@ -834,8 +836,8 @@ function renderDayEnd({ day, date, settings, videos, onUploaded, saveJournal, cl
                         </span>
                         <span class="tiny faint num">
                           ${v.durationSec ? humanDuration(v.durationSec) : '时长未知'}
-                          ${v.transcript?.status === 'done' ? ' · 已转写' : ''}
-                          ${v.analysis ? ' · 已分析' : ''}
+                          ${v.transcribeStatus === 'done' ? ' · 已转写' : ''}
+                          ${v.analyzed ? ' · 已分析' : ''}
                         </span>
                       </div>
                       <button class="btn btn-sm" onClick=${() => onPlay(v)}>播放</button>
@@ -843,6 +845,24 @@ function renderDayEnd({ day, date, settings, videos, onUploaded, saveJournal, cl
                   `,
                 )}
               </div>`
+            : null}
+          ${said
+            ? html`
+                <div
+                  style=${{
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    background: 'var(--surface-2, rgba(127,127,127,0.08))',
+                    borderLeft: '3px solid var(--teal)',
+                  }}
+                >
+                  <div class="section-title" style=${{ margin: '0 0 4px' }}>AI 看完今天的视频说</div>
+                  ${said.oneLiner
+                    ? html`<div style=${{ fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>${said.oneLiner}</div>`
+                    : null}
+                  <p class="report-narrative" style=${{ fontSize: '13.5px', margin: 0 }}>${said.encouragement}</p>
+                </div>
+              `
             : null}
           <${VideoUploader} date=${date} onDone=${onUploaded} compact=${videos.length > 0} />
         </div>

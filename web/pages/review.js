@@ -263,6 +263,25 @@ export function ReviewPage() {
                     .map((p) => html`<p>${p}</p>`)}
                 </div>
 
+                ${ai.yourOwnWords
+                  ? html`
+                      <div
+                        style=${{
+                          padding: '12px 14px',
+                          borderRadius: '10px',
+                          background: 'var(--surface-2, rgba(127,127,127,0.08))',
+                          borderLeft: '3px solid var(--gold)',
+                        }}
+                      >
+                        <div class="section-title" style=${{ margin: '0 0 4px' }}>你自己说的</div>
+                        <p class="report-narrative" style=${{ fontSize: '14px', margin: 0 }}>${ai.yourOwnWords}</p>
+                        <div class="tiny faint" style=${{ marginTop: '6px' }}>
+                          这一段是从你本周视频的文字稿里读出来的，不是从打卡数据推的。
+                        </div>
+                      </div>
+                    `
+                  : null}
+
                 <div class="grid-2">
                   ${ai.highlights?.length
                     ? html`<div class="stack-sm">

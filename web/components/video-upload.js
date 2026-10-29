@@ -41,7 +41,7 @@ export function VideoUploader({ date, onDone, compact = false, label = '上传�
       try {
         const payload = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300 && payload.ok) {
-          toastOk('视频已保存到本地');
+          toastOk('已保存到本地，正在后台压缩归档');
           onDone?.(payload.data.video);
         } else {
           toastErr(payload.error || '上传失败');

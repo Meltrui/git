@@ -35,6 +35,7 @@ const SECTIONS = [
   { id: 'plan', label: '规划与评分', icon: 'sliders' },
   { id: 'ai', label: '大模型', icon: 'sparkles' },
   { id: 'asr', label: '语音转写', icon: 'mic' },
+  { id: 'storage', label: '存储与视频', icon: 'film' },
   { id: 'reminder', label: '提醒', icon: 'bolt' },
   { id: 'access', label: '访问与安全', icon: 'lock' },
   { id: 'data', label: '数据与备份', icon: 'database' },
@@ -104,6 +105,9 @@ export function SettingsPage() {
         ${section === 'plan' ? html`<${PlanSection} settings=${settings} save=${save} />` : null}
         ${section === 'ai' ? html`<${AiSection} settings=${settings} save=${save} caps=${caps} />` : null}
         ${section === 'asr' ? html`<${AsrSection} settings=${settings} save=${save} caps=${caps} reload=${reload} />` : null}
+        ${section === 'storage'
+          ? html`<${StorageSection} settings=${settings} save=${save} reload=${reload} />`
+          : null}
         ${section === 'reminder'
           ? html`<${ReminderSection} settings=${settings} save=${save} />`
           : null}
@@ -810,6 +814,226 @@ function AccessSection({ settings, save }) {
             <${Icon} name="lock" size=${13} /> 取消口令
           </button>`
         : null}
+    </${Section}>
+  `;
+}
+
+/* ---------------- 存储与视频 ---------------- */
+
+function StorageSection({ settings, save, reload }) {
+  const m = settings.media || {};
+  const { data: storage, reload: reloadStorage } = useFetch(() => api.get('/api/storage'), []);
+  const { data: inbox, reload: reloadInbox } = useFetch(() => api.get('/api/inbox'), []);
+  const [scanning, setScanning] = useState(false);
+
+  const archive = m.archive || 'compact';
+  const compressed = archive === 'compact' || archive === 'high';
+  const keepOriginal = m.keepOriginal || 'off';
+  const pending = inbox?.pending || [];
+
+  const doScan = async () => {
+    setScanning(true);
+    try {
+      const res = await api.post('/api/inbox/scan');
+      const n = (res.imported || []).length;
+      if (n) toastOk(`导入 ${n} 个视频，正在后台归档`);
+      else if (res.waiting) toastOk(`${res.waiting} 个文件还在传输中`);
+      else toastOk('收件箱是空的');
+      await reloadInbox(true);
+    } catch (err) {
+      toastErr(err.message);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  return html`
+    <${Section} title="存储与视频" desc="每天一段视频，别让硬盘先放弃">
+      ${storage
+        ? html`
+            <div class="grid-3 tight">
+              <div class="stat">
+                <div class="stat-label">现在占用</div>
+                <div class="stat-value">${humanBytes(storage.keptBytes || 0)}</div>
+                <div class="stat-sub">${storage.counts?.videos || 0} 段视频</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">压缩省下</div>
+                <div class="stat-value">${humanBytes(storage.savedBytes || 0)}</div>
+                <div class="stat-sub">${storage.originalBytes ? `原来的 ${Math.round((storage.savedRatio || 0) * 100)}%` : '暂无数据'}</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">磁盘剩余</div>
+                <div class="stat-value">${storage.disk?.freeBytes ? humanBytes(storage.disk.freeBytes) : '—'}</div>
+                <div class="stat-sub">${storage.byKind?.raw ? `原片占 ${humanBytes(storage.byKind.raw)}` : '没有留存原片'}</div>
+              </div>
+            </div>
+            <div class="tiny faint">
+              详细的清理操作在「视频」页底部。这里只调策略。
+            </div>
+          `
+        : null}
+
+      <div class="divider"></div>
+
+      <${Field}
+        label="上传后怎么归档"
+        desc="录完自动压小，画质对看自己说话够用；后面可以随时改，再用「重新归档」重跑"
+      >
+        <select class="select" value=${archive} onChange=${(e) => save({ media: { archive: e.target.value } })}>
+          <option value="compact">压缩到 540p（推荐，一段 20 分钟约 20-40 MB）</option>
+          <option value="high">压缩到 720p（更清楚，体积约 2 倍）</option>
+          <option value="audio">只留音频 + 文字稿（最省，看不了画面）</option>
+          <option value="original">不压缩，留原片（最占地方）</option>
+        </select>
+      </${Field}>
+
+      ${compressed
+        ? html`
+            <div class="grid-2 tight">
+              <${Field} label="归档高度（像素）" desc="540 够看表情和板书；横屏竖屏都按短边算">
+                <input
+                  class="input"
+                  type="number"
+                  min="240"
+                  max="1080"
+                  step="60"
+                  value=${m.compactHeight || 540}
+                  onInput=${(e) => save({ media: { compactHeight: Number(e.target.value) || 540 } })}
+                />
+              </${Field}>
+              <${Field} label="压缩力度（CRF）" desc="数字越大越小越糊；30 很适合说话的画面">
+                <input
+                  class="input"
+                  type="number"
+                  min="18"
+                  max="40"
+                  step="1"
+                  value=${m.compactCrf ?? 30}
+                  onInput=${(e) => save({ media: { compactCrf: Number(e.target.value) || 30 } })}
+                />
+              </${Field}>
+            </div>
+          `
+        : null}
+
+      ${archive === 'audio'
+        ? html`
+            <${Field} label="音频码率（kbps）" desc="64 就能听清说话">
+              <input
+                class="input"
+                type="number"
+                min="32"
+                max="192"
+                step="16"
+                value=${m.compactAudioKbps || 64}
+                onInput=${(e) => save({ media: { compactAudioKbps: Number(e.target.value) || 64 } })}
+              />
+            </${Field}>
+          `
+        : null}
+
+      ${archive !== 'audio'
+        ? html`
+            <${Switch}
+              label="另外留一份纯音频"
+              desc="坐着听自己的总结比看视频省时间，转写也更快"
+              checked=${m.keepAudio !== false}
+              onChange=${(v) => save({ media: { keepAudio: v } })}
+            />
+          `
+        : null}
+
+      <${Field} label="原片怎么处理" desc="转码完成后要不要留着原始的大文件">
+        <select class="select" value=${keepOriginal} onChange=${(e) => save({ media: { keepOriginal: e.target.value } })}>
+          <option value="off">压完就删（最省空间，推荐）</option>
+          <option value="days">先留几天再删</option>
+          <option value="always">一直留着</option>
+        </select>
+      </${Field}>
+
+      ${keepOriginal === 'days'
+        ? html`
+            <${Field} label="留几天" desc="超过这个天数的原片会在后台被清掉，归档版一直留着">
+              <input
+                class="input"
+                type="number"
+                min="1"
+                max="365"
+                value=${m.keepOriginalDays || 7}
+                onInput=${(e) => save({ media: { keepOriginalDays: Number(e.target.value) || 7 } })}
+              />
+            </${Field}>
+          `
+        : null}
+
+      <${Field}
+        label="小于这个大小就不压了（MB）"
+        desc="原片本来就不大、格式也能直接播，压它只是浪费 CPU"
+      >
+        <input
+          class="input"
+          type="number"
+          min="0"
+          max="2000"
+          step="10"
+          value=${m.skipTranscodeBelowMb ?? 120}
+          onInput=${(e) => save({ media: { skipTranscodeBelowMb: Number(e.target.value) || 0 } })}
+        />
+      </${Field}>
+    </${Section}>
+
+    <${Section} title="收件箱" desc="手机传大视频，走这里比浏览器上传靠谱">
+      <div class="tiny faint" style=${{ lineHeight: 1.9 }}>
+        手机用微信 / QQ 把视频传到电脑，把文件拖进下面这个文件夹，就会自动导入、归档、转写、让 AI 读一遍。
+      </div>
+      <code
+        style=${{
+          display: 'block',
+          padding: '8px 10px',
+          borderRadius: '8px',
+          background: 'var(--surface-2, rgba(127,127,127,0.1))',
+          fontSize: '12px',
+          wordBreak: 'break-all',
+          userSelect: 'all',
+        }}
+      >${inbox?.dir || 'data/inbox'}</code>
+
+      <div class="row wrap" style=${{ gap: '8px', alignItems: 'center' }}>
+        <button class="btn btn-sm" onClick=${doScan} disabled=${scanning}>
+          ${scanning ? html`<span class="spinner"></span>` : html`<${Icon} name="refresh" size=${13} />`}
+          立即扫描
+        </button>
+        ${pending.length
+          ? html`<span class="chip gold" style=${{ fontSize: '11px' }}>${pending.length} 个在等</span>`
+          : html`<span class="tiny faint">现在是空的</span>`}
+        ${inbox?.lastScanAt ? html`<span class="tiny faint">上次扫描 ${inbox.lastScanAt.slice(11, 19)}</span>` : null}
+        ${inbox?.watching ? null : html`<span class="chip plain" style=${{ fontSize: '11px' }}>自动扫描已关闭</span>`}
+      </div>
+
+      <${Switch}
+        label="自动扫描收件箱"
+        desc="关掉以后只能手动点「立即扫描」"
+        checked=${m.inboxEnabled !== false}
+        onChange=${(v) => save({ media: { inboxEnabled: v } })}
+      />
+      <${Switch}
+        label="记到文件时间那一天"
+        desc="打开＝按视频文件的修改日期归档；关掉＝都记到今天"
+        checked=${(m.inboxDateFrom || 'filetime') === 'filetime'}
+        onChange=${(v) => save({ media: { inboxDateFrom: v ? 'filetime' : 'today' } })}
+      />
+      <${Field} label="扫描间隔（秒）" desc="太短没必要，20 秒足够">
+        <input
+          class="input"
+          type="number"
+          min="5"
+          max="600"
+          step="5"
+          value=${m.inboxScanSeconds || 20}
+          onInput=${(e) => save({ media: { inboxScanSeconds: Number(e.target.value) || 20 } })}
+        />
+      </${Field}>
     </${Section}>
   `;
 }
