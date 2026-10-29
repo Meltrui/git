@@ -282,6 +282,211 @@ export async function transcodeWeb(input, output) {
   return output;
 }
 
+/* ------------------------------------------------------------------ */
+/* 归档瘦身：把 1-2 GB 的总结视频压成几十 MB                            */
+/* ------------------------------------------------------------------ */
+
+function fileSize(p) {
+  try {
+    return fs.statSync(p).size;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * 带进度的 ffmpeg 调用。
+ * 注意不能用管道（受限环境 EPERM），所以用 `-progress <file>` 写进度文件，
+ * 定时读回来算百分比。
+ */
+function runWithProgress(cmd, args, { timeoutMs = 60 * 60 * 1000, totalSec = 0, onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    if (!cmd) return reject(new Error('可执行文件不存在'));
+    const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const outFile = path.join(os.tmpdir(), `${TMP_PREFIX}${stamp}.out`);
+    const errFile = path.join(os.tmpdir(), `${TMP_PREFIX}${stamp}.err`);
+    const progressFile = path.join(os.tmpdir(), `${TMP_PREFIX}${stamp}.progress`);
+    fs.writeFileSync(progressFile, '');
+    const outFd = fs.openSync(outFile, 'w');
+    const errFd = fs.openSync(errFile, 'w');
+
+    const fullArgs = [...args];
+    // -progress 必须放在输出文件之前
+    const outIdx = fullArgs.length - 1;
+    fullArgs.splice(outIdx, 0, '-progress', progressFile, '-nostats');
+
+    let child;
+    try {
+      child = spawn(cmd, fullArgs, { stdio: ['ignore', outFd, errFd], windowsHide: true });
+    } catch (err) {
+      fs.closeSync(outFd);
+      fs.closeSync(errFd);
+      reject(err);
+      return;
+    }
+
+    const readProgress = () => {
+      try {
+        const text = fs.readFileSync(progressFile, 'utf8');
+        const m = [...text.matchAll(/out_time_ms=(\d+)/g)];
+        if (!m.length) return;
+        const us = Number(m[m.length - 1][1]);
+        if (!Number.isFinite(us) || us <= 0) return;
+        const sec = us / 1e6;
+        if (totalSec > 0 && typeof onProgress === 'function') {
+          const pct = Math.max(1, Math.min(99, Math.round((sec / totalSec) * 100)));
+          onProgress(pct);
+        }
+      } catch {
+        /* 进度读失败无所谓 */
+      }
+    };
+    const ticker = onProgress && totalSec > 0 ? setInterval(readProgress, 1200) : null;
+
+    const cleanup = () => {
+      if (ticker) clearInterval(ticker);
+      for (const fd of [outFd, errFd]) {
+        try {
+          fs.closeSync(fd);
+        } catch {
+          /* 忽略 */
+        }
+      }
+    };
+
+    const readAndRemove = (file) => {
+      let text = '';
+      try {
+        text = fs.readFileSync(file, 'utf8');
+      } catch {
+        /* 忽略 */
+      }
+      try {
+        fs.unlinkSync(file);
+      } catch {
+        /* 忽略 */
+      }
+      return text;
+    };
+
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        /* 忽略 */
+      }
+    }, timeoutMs);
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      cleanup();
+      readAndRemove(outFile);
+      readAndRemove(errFile);
+      readAndRemove(progressFile);
+      reject(err);
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      cleanup();
+      const stdout = readAndRemove(outFile);
+      const stderr = readAndRemove(errFile);
+      readAndRemove(progressFile);
+      resolve({ code: code ?? -1, stdout, stderr });
+    });
+  });
+}
+
+/**
+ * 压一条「归档版」：小体积、浏览器直接能播。
+ * 540p / CRF 30 的说话头视频，10 分钟大约 25-45 MB。
+ */
+export async function transcodeArchive(input, output, opts = {}) {
+  const ff = ffmpegPath();
+  if (!ff) throw new Error('没有找到 ffmpeg，无法压缩');
+  const height = Math.max(240, Math.min(1080, Number(opts.height) || 540));
+  const crf = Math.max(18, Math.min(40, Number(opts.crf) || 30));
+  const audioKbps = Math.max(32, Math.min(192, Number(opts.audioKbps) || 64));
+
+  const args = [
+    '-y',
+    '-i',
+    input,
+    '-map',
+    '0:v:0',
+    '-map',
+    '0:a:0?',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    String(crf),
+    '-pix_fmt',
+    'yuv420p',
+    // 竖屏也不变形：短边缩到目标高度
+    '-vf',
+    `scale='if(gt(iw,ih),-2,${height})':'if(gt(iw,ih),${height},-2)'`,
+    '-profile:v',
+    'main',
+    '-level',
+    '4.0',
+    '-c:a',
+    'aac',
+    '-b:a',
+    `${audioKbps}k`,
+    '-ac',
+    '2',
+    '-movflags',
+    '+faststart',
+    output,
+  ];
+
+  const { code, stderr } = await runWithProgress(ff, args, {
+    timeoutMs: 90 * 60 * 1000,
+    totalSec: Number(opts.totalSec) || 0,
+    onProgress: opts.onProgress,
+  });
+  if (code !== 0 || !fs.existsSync(output)) {
+    throw new Error(`压缩失败：${stderr.slice(-500)}`);
+  }
+  return { path: output, size: fileSize(output) };
+}
+
+/**
+ * 抽一条「归档音频」：AAC 单声道 48 kbps。
+ * 10 分钟约 3.6 MB —— 回听、转写、AI 阅读都够用。
+ */
+export async function extractAudioCompact(input, output, { kbps = 48 } = {}) {
+  const ff = ffmpegPath();
+  if (!ff) throw new Error('没有找到 ffmpeg，无法提取音频');
+  const args = [
+    '-y',
+    '-i',
+    input,
+    '-vn',
+    '-ac',
+    '1',
+    '-ar',
+    '32000',
+    '-c:a',
+    'aac',
+    '-b:a',
+    `${Math.max(24, Math.min(96, Number(kbps) || 48))}k`,
+    '-movflags',
+    '+faststart',
+    output,
+  ];
+  const { code, stderr } = await run(ff, args, { timeoutMs: 30 * 60 * 1000 });
+  if (code !== 0 || !fs.existsSync(output)) {
+    throw new Error(`提取音频失败：${stderr.slice(-400)}`);
+  }
+  return { path: output, size: fileSize(output) };
+}
+
+export { fileSize };
+
+
 /** 把多个视频拼成一个（周回顾） */
 export async function concatVideos(inputs, output, workDir) {
   const ff = ffmpegPath();

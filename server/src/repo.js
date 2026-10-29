@@ -499,6 +499,8 @@ export function videoBrief(v) {
     transcribeStatus: v.transcript?.status || 'none',
     analyzed: !!v.analysis,
     analysisSummary: v.analysis?.summary || '',
+    oneLiner: v.analysis?.oneLiner || '',
+    encouragement: v.analysis?.encouragement || '',
     title: v.title || (v.originalName || '').replace(/\.[^.]+$/, ''),
   };
 }

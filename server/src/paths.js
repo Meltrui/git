@@ -20,13 +20,18 @@ export const THUMB_DIR = path.join(VIDEO_DIR, 'thumbs');
 export const TMP_DIR = path.join(DATA_DIR, 'tmp');
 export const ASR_DIR = path.join(ROOT, '.asr');
 
+/** 收件箱：手机传过来的视频丢这里就会自动导入 */
+export const INBOX_DIR = path.join(DATA_DIR, 'inbox');
+export const INBOX_DONE_DIR = path.join(INBOX_DIR, '.imported');
+export const INBOX_LOG = path.join(DATA_DIR, 'inbox-log.json');
+
 /** 前端构建产物 */
 export const WEB_DIST = path.join(ROOT, 'web', 'dist');
 
 export const PORT = Number(process.env.ANCHOR_PORT || 8787);
 export const HOST = process.env.ANCHOR_HOST || '0.0.0.0';
 
-const ALL_DIRS = [DATA_DIR, BACKUP_DIR, VIDEO_DIR, REEL_DIR, THUMB_DIR, TMP_DIR];
+const ALL_DIRS = [DATA_DIR, BACKUP_DIR, VIDEO_DIR, REEL_DIR, THUMB_DIR, TMP_DIR, INBOX_DIR, INBOX_DONE_DIR];
 
 export function ensureDirs() {
   for (const dir of ALL_DIRS) {

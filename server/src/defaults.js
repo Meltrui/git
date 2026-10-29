@@ -243,7 +243,22 @@ export function defaultSettings() {
       language: 'zh',
       apiKey: '',
       baseUrl: '',
-      autoTranscribe: false, // 上传后自动转写
+      autoTranscribe: true, // 上传后自动转写（本地模型，不花钱）
+    },
+
+    /* 视频存储：手机录的总结视频动辄 1-2 GB，这里决定怎么瘦身 */
+    media: {
+      archive: 'compact', // compact(540p，默认) | high(720p) | audio(只留音频+文字稿) | original(保留原片)
+      compactHeight: 540,
+      compactCrf: 30,
+      compactAudioKbps: 64,
+      keepOriginal: 'off', // off(归档完成就删原片，默认) | days(保留 N 天) | always(一直留)
+      keepOriginalDays: 7,
+      skipTranscodeBelowMb: 120, // 原片本来就小、又能在浏览器里播，就不再压一遍
+      keepAudio: true, // 单独留一条音频，回听很省流量
+      inboxEnabled: true, // 收件箱自动导入：把手机传来的视频丢进 data/inbox 就行
+      inboxScanSeconds: 20,
+      inboxDateFrom: 'filetime', // filetime(按文件修改日期归档) | today(一律算今天)
     },
 
     /* 访问控制（局域网/手机访问时用） */
